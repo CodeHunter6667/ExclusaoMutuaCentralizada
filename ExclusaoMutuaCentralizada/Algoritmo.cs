@@ -1,14 +1,19 @@
 ﻿namespace ExclusaoMutuaCentralizada;
 public class Algoritmo
-{
-    public int QuantidadeNos { get; set; }
-    private Stack<No> PilhaNos { get; set; } = new Stack<No>();
 
-    private List<No> ListaNos { get; set; } = new List<No>();
+{
+
+    Random random = new Random();
+
+    public int QuantidadeNos { get; set; }
+    private Stack<No> PilhaNos { get; set; } = new Stack<No>(); //Fila de requisição
+
+    private List<No> ListaNos { get; set; } = new List<No>(); // Lista de processos existentes
+
+    private int ContadorNos = 0;
 
     public void Start()
     {
-        Random random = new Random();
         int NumeroRandomico = random.Next(1, QuantidadeNos);
 
         for (int i = 0; i <= QuantidadeNos; i++)
@@ -17,29 +22,54 @@ public class Algoritmo
             {
                 Id = Guid.NewGuid(),
                 NomeProcesso = $"Processo: {i}",
-                Coordenador = NumeroRandomico == i ? true : false
+                Coordenador = NumeroRandomico == i ? true : false  //Se o número randômico for igual ao i do laço for, define o nó como coordenador
             });
+            ContadorNos++;
         }
     }
 
     public void Processar()
     {
-        var limiteCoordenador = DateTime.Now.AddMinutes(1);
-
-        while (DateTime.Now.TimeOfDay < limiteCoordenador.TimeOfDay)
+        var limiteCoordenador = DateTime.Now.AddSeconds(60);
+        while (DateTime.Now.TimeOfDay < limiteCoordenador.TimeOfDay) //Enquanto o coordenador está vivo
         {
+            var limiteCriaProcesso = DateTime.Now.AddSeconds(40);
+            while(DateTime.Now.TimeOfDay < limiteCriaProcesso.TimeOfDay) //Enquanto um processo novo não é criado
+            {
+                
+            }
+            CriarNovoNo();
         }
 
+        //Coordenador atual morre e a pilha de requisições é perdida
         CoordenadorMorre();
         LimpaPilhaNos();
-
+        //Um novo coordenador é definido aleatoriamente
+        DefinirNovoCoordenador();
 
         Processar();
     }
 
-    private void LimpaPilhaNos() 
+    private void CriarNovoNo()
+    {
+        ListaNos.Add(new No
+        {
+            Id = Guid.NewGuid(),
+            NomeProcesso = $"Processo: {ContadorNos}",
+            Coordenador = false
+        });
+        ContadorNos++;
+    }
+
+    private void LimpaPilhaNos()
     {
         PilhaNos.Clear();
+    }
+
+    private void DefinirNovoCoordenador()
+    {
+        var novoCoordenador = ListaNos.OrderBy(x => Guid.NewGuid()).FirstOrDefault();
+        novoCoordenador.Coordenador = true;
     }
 
     private void CoordenadorMorre()
@@ -50,11 +80,21 @@ public class Algoritmo
     }
 
     private class No
+
     {
         public Guid Id { get; set; }
         public string NomeProcesso { get; set; }
 
         public bool Coordenador { get; set; }
+
+        public DateTime SegundosProcessamento { get; set; }
+
+        public No()
+        {
+            Random random = new Random();
+
+            SegundosProcessamento = DateTime.Now.AddSeconds(random.Next(5, 15));
+        }
 
     }
 }
