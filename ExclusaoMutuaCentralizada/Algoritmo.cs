@@ -49,8 +49,6 @@ public class Algoritmo
                     }
                 }
                 CriarNovoNo();
-            }
-
             //Coordenador atual morre e a fila de requisições é perdida
             CoordenadorMorre();
             LimpaFilaNos();
@@ -93,6 +91,41 @@ public class Algoritmo
         }
     }
 
+    private void CriarRequisicao(No NoRequisitor)
+    {
+        var Coordenador = ListaNos.First(x => x.Coordenador); //A variável recebe o atual coordenador da fila. 
+
+        if(PilhaNos.Count == 0) //Se a fila estiver vazia, a requisição é atendida imediatamente.
+        {
+            Console.WriteLine("OK!");
+            ProcessarRequisicao(NoRequisitor);
+        }
+        else //Se a fila tiver outros nós pendentes
+        {
+            PilhaNos.Push(NoRequisitor); //O nó requisitor é inserido na fila
+
+        }
+    }
+
+    private void ProcessarRequisicao(No noRequisidor)
+    {
+        if(PilhaNos.Count == 0) //Se não há nada para processar, a requisição é atendida diretamente
+        {
+            while(DateTime.Now.TimeOfDay < noRequisidor.SegundosProcessamento.TimeOfDay) // Equanto o processo estiver consumindo o recurso
+            {
+                //Passou o tempo
+            }
+        }
+        else // Existe um processo na fila, o qual deve ser removido e processado
+        {
+            No processoNaFila = PilhaNos.Pop();
+            while (DateTime.Now.TimeOfDay < noRequisidor.SegundosProcessamento.TimeOfDay) // Equanto o processo estiver consumindo o recurso
+            {
+                //Passou o tempo          
+            }
+        }
+    }
+
     private void CriarNovoNo()
     {
         ListaNos.Add(new No
@@ -126,19 +159,20 @@ public class Algoritmo
     private class No
     {
         public Guid Id { get; set; }
-        public string NomeProcesso { get; set; }
-
+        public string NomeProcesso { get; set; } = string.Empty;
         public bool Coordenador { get; set; }
-
-        public DateTime SegundosProcessamento { get; set; }
-        public DateTime SegundosRequisicao { get; set; }
+        public DateTime SegundosProcessamento {  get; set; }
 
         public No()
         {
-            Random random = new Random();
+            NovoTempoProcessamento();
+        }
 
-            SegundosRequisicao = DateTime.Now.AddSeconds(random.Next(10, 25)); // A cada 10-25 segundos o nó solicita acesso ao recurso
-            SegundosProcessamento = DateTime.Now.AddSeconds(random.Next(5, 15)); // A cada 5-15 segundos o recurso é processado pelo nó
+        public void NovoTempoProcessamento()
+        {
+            var novoProcessamento = DateTime.Now.AddSeconds(new Random().Next(5, 15));
+
+            SegundosProcessamento = novoProcessamento;
         }
     }
 }
