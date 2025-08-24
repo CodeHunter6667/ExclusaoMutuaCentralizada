@@ -1,12 +1,12 @@
-﻿namespace ExclusaoMutuaCentralizada;
+﻿using System.Data;
+
+namespace ExclusaoMutuaCentralizada;
 public class Algoritmo
-
 {
-
     Random random = new Random();
 
     public int QuantidadeNos { get; set; }
-    private Stack<No> PilhaNos { get; set; } = new Stack<No>(); //Fila de requisição
+    private Queue<No> FilaNos { get; set; } = new Queue<No>(); // Fila de requisição
 
     private List<No> ListaNos { get; set; } = new List<No>(); // Lista de processos existentes
 
@@ -16,7 +16,7 @@ public class Algoritmo
     {
         int NumeroRandomico = random.Next(1, QuantidadeNos);
 
-        for (int i = 0; i <= QuantidadeNos; i++)
+        for (int i = 0; i < QuantidadeNos; i++)
         {
             ListaNos.Add(new No
             {
@@ -30,24 +30,65 @@ public class Algoritmo
 
     public void Processar()
     {
-        var limiteCoordenador = DateTime.Now.AddSeconds(60);
-        while (DateTime.Now.TimeOfDay < limiteCoordenador.TimeOfDay) //Enquanto o coordenador está vivo
+        while (true)
         {
-            var limiteCriaProcesso = DateTime.Now.AddSeconds(40);
-            while (DateTime.Now.TimeOfDay < limiteCriaProcesso.TimeOfDay) //Enquanto um processo novo não é criado
+            var limiteCoordenador = DateTime.Now.AddSeconds(60);
+            while (DateTime.Now < limiteCoordenador) //Enquanto o coordenador está vivo
             {
-
-            }
-            CriarNovoNo();
+                var limiteCriaProcesso = DateTime.Now.AddSeconds(40);
+                while (DateTime.Now < limiteCriaProcesso) //Enquanto um processo novo não é criado
+                {
+                    for (int i = 0; i < QuantidadeNos; i++)
+                    {
+                        while (DateTime.Now < ListaNos[i].SegundosRequisicao) //Enquanto o tempo de requisição do nó não for atingido
+                        {
+                            Thread.Sleep(50);
+                        }
+                        CriarRequisicao(ListaNos[i]); //Chamada da criação de requisição
+                        ProcessarRequisicao(ListaNos[i]); //Chamada do processamento de requisição
+                    }
+                }
+                CriarNovoNo();
+            //Coordenador atual morre e a fila de requisições é perdida
+            CoordenadorMorre();
+            LimpaFilaNos();
+            //Um novo coordenador é definido aleatoriamente
+            DefinirNovoCoordenador();
         }
+    }
 
-        //Coordenador atual morre e a pilha de requisições é perdida
-        CoordenadorMorre();
-        LimpaPilhaNos();
-        //Um novo coordenador é definido aleatoriamente
-        DefinirNovoCoordenador();
+    private void CriarRequisicao(No NoRequisitor)
+    {
+        var Coordenador = ListaNos.First(x => x.Coordenador); //A variável recebe o atual coordenador da fila. 
 
-        Processar();
+        if (FilaNos.Count == 0) //Se a fila estiver vazia, a requisição é atendida imediatamente.
+        {
+            Console.WriteLine("OK!");
+            ProcessarRequisicao(NoRequisitor);
+        }
+        else //Se a fila tiver outros nós pendentes
+        {
+            FilaNos.Enqueue(NoRequisitor);
+        }
+    }
+
+    private void ProcessarRequisicao(No noRequisidor)
+    {
+        if (FilaNos.Count == 0) //Se não há nada para processar, a requisição é atendida diretamente
+        {
+            while (DateTime.Now < noRequisidor.SegundosProcessamento) // Equanto o processo estiver consumindo o recurso
+            {
+                Thread.Sleep(50);
+            }
+        }
+        else // Existe um processo na fila, o qual deve ser removido e processado
+        {
+            No processoNaFila = FilaNos.Dequeue();
+            while (DateTime.Now < processoNaFila.SegundosProcessamento) // Equanto o processo estiver consumindo o recurso
+            {
+                Thread.Sleep(50);
+            }
+        }
     }
 
     private void CriarRequisicao(No NoRequisitor)
@@ -97,14 +138,14 @@ public class Algoritmo
         QuantidadeNos++;
     }
 
-    private void LimpaPilhaNos()
+    private void LimpaFilaNos()
     {
-        PilhaNos.Clear();
+        FilaNos.Clear();
     }
 
     private void DefinirNovoCoordenador()
     {
-        var novoCoordenador = ListaNos.OrderBy(x => Guid.NewGuid()).FirstOrDefault();
+        var novoCoordenador = ListaNos.OrderBy(x => Guid.NewGuid()).First(); //O novo coordenador é escolhido aleatoriamente
         novoCoordenador.Coordenador = true;
     }
 
