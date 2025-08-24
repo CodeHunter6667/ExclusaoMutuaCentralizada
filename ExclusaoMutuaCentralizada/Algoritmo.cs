@@ -34,9 +34,9 @@ public class Algoritmo
         while (DateTime.Now.TimeOfDay < limiteCoordenador.TimeOfDay) //Enquanto o coordenador está vivo
         {
             var limiteCriaProcesso = DateTime.Now.AddSeconds(40);
-            while(DateTime.Now.TimeOfDay < limiteCriaProcesso.TimeOfDay) //Enquanto um processo novo não é criado
+            while (DateTime.Now.TimeOfDay < limiteCriaProcesso.TimeOfDay) //Enquanto um processo novo não é criado
             {
-                
+
             }
             CriarNovoNo();
         }
@@ -59,6 +59,7 @@ public class Algoritmo
             Coordenador = false
         });
         ContadorNos++;
+        QuantidadeNos++;
     }
 
     private void LimpaPilhaNos()
@@ -80,21 +81,22 @@ public class Algoritmo
     }
 
     private class No
-
     {
         public Guid Id { get; set; }
-        public string NomeProcesso { get; set; }
-
+        public string NomeProcesso { get; set; } = string.Empty;
         public bool Coordenador { get; set; }
-
-        public DateTime SegundosProcessamento { get; set; }
+        public DateTime SegundosProcessamento {  get; set; }
 
         public No()
         {
-            Random random = new Random();
-
-            SegundosProcessamento = DateTime.Now.AddSeconds(random.Next(5, 15));
+            NovoTempoProcessamento();
         }
 
+        public void NovoTempoProcessamento()
+        {
+            var novoProcessamento = DateTime.Now.AddSeconds(new Random().Next(5, 15));
+
+            SegundosProcessamento = novoProcessamento;
+        }
     }
 }
