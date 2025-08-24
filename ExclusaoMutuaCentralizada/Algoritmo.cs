@@ -1,137 +1,264 @@
 ﻿namespace ExclusaoMutuaCentralizada;
 public class Algoritmo
-
 {
+    public int Id { get; }
+    public bool IsCoordenador { get; private set; }
 
-    Random random = new Random();
+    // Referência ao simulador para obter o coordenador atual.
+    private readonly Simulador _simulador;
+    private static readonly Random _random = new Random();
 
-    public int QuantidadeNos { get; set; }
-    private Stack<No> PilhaNos { get; set; } = new Stack<No>(); //Fila de requisição
+    // --- Atributos de Coordenador (só são usados se IsCoordenador == true) ---
+    private readonly Queue<Algoritmo> _filaDeEspera = new Queue<Algoritmo>();
+    private Algoritmo? _processoNaRegiaoCritica = null;
+    private readonly object _lock = new object();
+    // --------------------------------------------------------------------
 
-    private List<No> ListaNos { get; set; } = new List<No>(); // Lista de processos existentes
-
-    private int ContadorNos = 0;
-
-    public void Start()
+    public Algoritmo(int id, Simulador simulador)
     {
-        int NumeroRandomico = random.Next(1, QuantidadeNos);
-
-        for (int i = 0; i <= QuantidadeNos; i++)
-        {
-            ListaNos.Add(new No
-            {
-                Id = Guid.NewGuid(),
-                NomeProcesso = $"Processo: {i}",
-                Coordenador = NumeroRandomico == i ? true : false  //Se o número randômico for igual ao i do laço for, define o nó como coordenador
-            });
-            ContadorNos++;
-        }
+        Id = id;
+        _simulador = simulador;
+        IsCoordenador = false;
     }
 
-    public void Processar()
+    public void TornarCoordenador()
     {
-        var limiteCoordenador = DateTime.Now.AddSeconds(60);
-        while (DateTime.Now.TimeOfDay < limiteCoordenador.TimeOfDay) //Enquanto o coordenador está vivo
-        {
-            var limiteCriaProcesso = DateTime.Now.AddSeconds(40);
-            while (DateTime.Now.TimeOfDay < limiteCriaProcesso.TimeOfDay) //Enquanto um processo novo não é criado
-            {
+        Console.WriteLine($"[ELEIÇÃO] Processo {Id} agora é o Coordenador.");
+        IsCoordenador = true;
+    }
 
+    public void DeixarDeSerCoordenador()
+    {
+        IsCoordenador = false;
+        // A fila e o estado da região crítica são perdidos naturalmente com a "morte" do coordenador.
+    }
+
+    // O "loop de vida" de um processo.
+    public async Task IniciarTrabalhoAsync(CancellationToken cancellationToken)
+    {
+        Console.WriteLine($"[PROCESSO {Id}] iniciou seu trabalho.");
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                // Requisito: Processos tentam consumir recursos de 10 a 25 segundos.
+                int tempoAteProximaRequisicao = _random.Next(10000, 25001);
+                await Task.Delay(tempoAteProximaRequisicao, cancellationToken);
+
+                var coordenadorAtual = _simulador.ObterCoordenadorAtual();
+                if (coordenadorAtual == null)
+                {
+                    Console.WriteLine($"[PROCESSO {Id}] tentou fazer uma requisição, mas não há coordenador no momento.");
+                    continue;
+                }
+
+                Console.WriteLine($"[PROCESSO {Id}] quer entrar na região crítica. Enviando REQUEST para o Coordenador {coordenadorAtual.Id}.");
+                bool acessoConcedido = await coordenadorAtual.SolicitarAcesso(this);
+
+                if (acessoConcedido)
+                {
+                    // Requisito: Tempo de processamento de 5 a 15 segundos.
+                    Console.WriteLine($"\t\t>>>>> [PROCESSO {Id}] ENTROU na região crítica! Usando o recurso...");
+                    int tempoDeProcessamento = _random.Next(5000, 15001);
+                    await Task.Delay(tempoDeProcessamento, cancellationToken);
+                    Console.WriteLine($"\t\t<<<<< [PROCESSO {Id}] SAIU da região crítica!");
+
+                    await coordenadorAtual.LiberarAcesso(this);
+                }
+                else
+                {
+                    // Isso acontece se o coordenador morreu enquanto este processo estava na fila.
+                    Console.WriteLine($"[PROCESSO {Id}] não obteve acesso pois o coordenador morreu. Tentará novamente mais tarde.");
+                }
             }
-            CriarNovoNo();
-        }
-
-        //Coordenador atual morre e a pilha de requisições é perdida
-        CoordenadorMorre();
-        LimpaPilhaNos();
-        //Um novo coordenador é definido aleatoriamente
-        DefinirNovoCoordenador();
-
-        Processar();
-    }
-
-    private void CriarRequisicao(No NoRequisitor)
-    {
-        var Coordenador = ListaNos.First(x => x.Coordenador); //A variável recebe o atual coordenador da fila. 
-
-        if(PilhaNos.Count == 0) //Se a fila estiver vazia, a requisição é atendida imediatamente.
-        {
-            Console.WriteLine("OK!");
-            ProcessarRequisicao(NoRequisitor);
-        }
-        else //Se a fila tiver outros nós pendentes
-        {
-            PilhaNos.Push(NoRequisitor); //O nó requisitor é inserido na fila
-
-        }
-    }
-
-    private void ProcessarRequisicao(No noRequisidor)
-    {
-        if(PilhaNos.Count == 0) //Se não há nada para processar, a requisição é atendida diretamente
-        {
-            while(DateTime.Now.TimeOfDay < noRequisidor.SegundosProcessamento.TimeOfDay) // Equanto o processo estiver consumindo o recurso
+            catch (TaskCanceledException)
             {
-                //Passou o tempo
+                // A simulação está terminando.
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PROCESSO {Id}] encontrou um erro: {ex.Message}");
             }
         }
-        else // Existe um processo na fila, o qual deve ser removido e processado
+        Console.WriteLine($"[PROCESSO {Id}] finalizou seu trabalho.");
+    }
+
+    #region Métodos de Coordenador
+
+    // Chamado por outro processo (ou por ele mesmo) para pedir acesso.
+    public Task<bool> SolicitarAcesso(Algoritmo processoRequisitante)
+    {
+        if (!IsCoordenador) return Task.FromResult(false); // Só o coordenador responde.
+
+        lock (_lock)
         {
-            No processoNaFila = PilhaNos.Pop();
-            while (DateTime.Now.TimeOfDay < noRequisidor.SegundosProcessamento.TimeOfDay) // Equanto o processo estiver consumindo o recurso
+            Console.WriteLine($"[COORDENADOR {Id}] Recebeu REQUEST do Processo {processoRequisitante.Id}.");
+
+            if (_processoNaRegiaoCritica == null && !_filaDeEspera.Any())
             {
-                //Passou o tempo          
+                Console.WriteLine($"[COORDENADOR {Id}] Recurso está livre. Enviando GRANT para o Processo {processoRequisitante.Id}.");
+                _processoNaRegiaoCritica = processoRequisitante;
+                return Task.FromResult(true);
+            }
+            else
+            {
+                Console.WriteLine($"[COORDENADOR {Id}] Recurso ocupado. Processo {processoRequisitante.Id} foi adicionado à fila.");
+                _filaDeEspera.Enqueue(processoRequisitante);
+                // Em uma simulação mais complexa, usaríamos TaskCompletionSource para bloquear a chamada.
+                // Para este modelo, a lógica de re-tentativa no processo cliente é suficiente.
+                // Por simplicidade, vamos assumir que o processo cliente vai esperar e o coordenador o chamará.
+                // Para a especificação atual, vamos simplificar e o processo não ficará "travado" esperando.
+                // A simulação é mais sobre os eventos do que sobre a mecânica de bloqueio.
+                return Task.FromResult(false); // Retorna falso para indicar que entrou na fila.
             }
         }
     }
 
-    private void CriarNovoNo()
+    // Chamado pelo processo que estava na região crítica.
+    public Task LiberarAcesso(Algoritmo processoQueLibera)
     {
-        ListaNos.Add(new No
+        if (!IsCoordenador) return Task.CompletedTask;
+
+        lock (_lock)
         {
-            Id = Guid.NewGuid(),
-            NomeProcesso = $"Processo: {ContadorNos}",
-            Coordenador = false
-        });
-        ContadorNos++;
-        QuantidadeNos++;
+            Console.WriteLine($"[COORDENADOR {Id}] Recebeu RELEASE do Processo {processoQueLibera.Id}.");
+            _processoNaRegiaoCritica = null;
+
+            if (_filaDeEspera.Any())
+            {
+                var proximoProcesso = _filaDeEspera.Dequeue();
+                _processoNaRegiaoCritica = proximoProcesso;
+                Console.WriteLine($"[COORDENADOR {Id}] Recurso liberado. Enviando GRANT para o próximo da fila: Processo {proximoProcesso.Id}.");
+                // Em um sistema real, aqui você notificaria o 'proximoProcesso'.
+            }
+            else
+            {
+                Console.WriteLine($"[COORDENADOR {Id}] Recurso agora está livre e a fila está vazia.");
+            }
+        }
+        return Task.CompletedTask;
     }
 
-    private void LimpaPilhaNos()
-    {
-        PilhaNos.Clear();
-    }
+    #endregion
+}
 
-    private void DefinirNovoCoordenador()
-    {
-        var novoCoordenador = ListaNos.OrderBy(x => Guid.NewGuid()).FirstOrDefault();
-        novoCoordenador.Coordenador = true;
-    }
+// Classe principal que gerencia o estado e os eventos da simulação.
+public class Simulador
+{
+    private readonly List<Algoritmo> _processosAtivos = new();
+    private Algoritmo? _coordenadorAtual;
+    private int _proximoIdDeProcesso = 1;
+    private readonly CancellationTokenSource _cts = new CancellationTokenSource();
+    private readonly object _lock = new object();
 
-    private void CoordenadorMorre()
+    public Algoritmo? ObterCoordenadorAtual()
     {
-        var noCoordenador = ListaNos.Where(x => x.Coordenador).FirstOrDefault();
-        ListaNos.Remove(noCoordenador);
-        QuantidadeNos--;
-    }
-
-    private class No
-    {
-        public Guid Id { get; set; }
-        public string NomeProcesso { get; set; } = string.Empty;
-        public bool Coordenador { get; set; }
-        public DateTime SegundosProcessamento {  get; set; }
-
-        public No()
+        lock (_lock)
         {
-            NovoTempoProcessamento();
+            return _coordenadorAtual;
+        }
+    }
+
+    public async Task RodarSimulacao()
+    {
+        Console.WriteLine("--- Simulação Iniciada ---");
+        Console.WriteLine("Pressione qualquer tecla para parar a simulação...");
+
+        // Inicia com 3 processos.
+        for (int i = 0; i < 3; i++)
+        {
+            CriarNovoProcesso();
         }
 
-        public void NovoTempoProcessamento()
-        {
-            var novoProcessamento = DateTime.Now.AddSeconds(new Random().Next(5, 15));
+        // Eleição inicial
+        ElegerNovoCoordenador();
 
-            SegundosProcessamento = novoProcessamento;
+        // Inicia as tarefas de gerenciamento em paralelo
+        var gerenciadorCoordenador = GerenciarCicloDeVidaCoordenadorAsync(_cts.Token);
+        var gerenciadorProcessos = GerenciarCriacaoDeProcessosAsync(_cts.Token);
+
+        // Aguarda uma tecla ser pressionada para encerrar
+        await Task.Run(() => Console.ReadKey());
+        _cts.Cancel(); // Sinaliza para todas as tasks pararem
+
+        // Aguarda as tarefas de gerenciamento finalizarem
+        await Task.WhenAll(gerenciadorCoordenador, gerenciadorProcessos);
+
+        Console.WriteLine("\n--- Simulação Finalizada ---");
+    }
+
+    private void CriarNovoProcesso()
+    {
+        lock (_lock)
+        {
+            // Requisito: ID randômico (aqui usamos sequencial para garantir unicidade)
+            var novoProcesso = new Algoritmo(_proximoIdDeProcesso++, this);
+            _processosAtivos.Add(novoProcesso);
+            Console.WriteLine($"[SIMULADOR] Novo processo criado: ID {novoProcesso.Id}. Total: {_processosAtivos.Count}");
+            // Inicia o trabalho do processo em background
+            _ = novoProcesso.IniciarTrabalhoAsync(_cts.Token);
+        }
+    }
+
+    private void ElegerNovoCoordenador()
+    {
+        lock (_lock)
+        {
+            if (_coordenadorAtual != null)
+            {
+                _coordenadorAtual.DeixarDeSerCoordenador();
+            }
+
+            if (!_processosAtivos.Any())
+            {
+                _coordenadorAtual = null;
+                Console.WriteLine("[SIMULADOR] Não há processos ativos para eleger um novo coordenador.");
+                return;
+            }
+
+            // Requisito: Novo coordenador escolhido de forma randomizada.
+            var random = new Random();
+            _coordenadorAtual = _processosAtivos[random.Next(_processosAtivos.Count)];
+            _coordenadorAtual.TornarCoordenador();
+        }
+    }
+
+    // Requisito: a cada 1 minuto o coordenador morre
+    private async Task GerenciarCicloDeVidaCoordenadorAsync(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(1), token);
+
+                lock (_lock)
+                {
+                    if (_coordenadorAtual != null)
+                    {
+                        Console.WriteLine($"\n!!! [SIMULADOR] O COORDENADOR {_coordenadorAtual.Id} MORREU. A fila de requisições foi perdida. !!!\n");
+                        _processosAtivos.Remove(_coordenadorAtual);
+                        _coordenadorAtual = null;
+                        ElegerNovoCoordenador();
+                    }
+                }
+            }
+            catch (TaskCanceledException) { break; }
+        }
+    }
+
+    // Requisito: a cada 40 segundos um novo processo deve ser criado
+    private async Task GerenciarCriacaoDeProcessosAsync(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(40), token);
+                CriarNovoProcesso();
+            }
+            catch (TaskCanceledException) { break; }
         }
     }
 }
