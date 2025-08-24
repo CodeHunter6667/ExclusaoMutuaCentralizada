@@ -1,4 +1,5 @@
 ﻿using System.Data;
+using System.Threading.Tasks;
 
 namespace ExclusaoMutuaCentralizada;
 public class Algoritmo
@@ -12,9 +13,17 @@ public class Algoritmo
 
     private int ContadorNos = 0;
 
+    private readonly object _lock = new object();
+
+    private No? _coordenadorAtual;
+
+    private bool recursoEmUso = false; // Indica se o recurso está ocupado
+
+    private CancellationTokenSource cts = new CancellationTokenSource();
+
     public void Start()
     {
-        int NumeroRandomico = random.Next(1, QuantidadeNos);
+        int NumeroRandomico = random.Next(0, QuantidadeNos);
 
         for (int i = 0; i < QuantidadeNos; i++)
         {
@@ -22,75 +31,63 @@ public class Algoritmo
             {
                 Id = Guid.NewGuid(),
                 NomeProcesso = $"Processo: {i}",
-                Coordenador = NumeroRandomico == i ? true : false  //Se o número randômico for igual ao i do laço for, define o nó como coordenador
+                Coordenador = NumeroRandomico == i
             });
             ContadorNos++;
         }
+
+        // Inicia o processamento da fila em background
+        Task.Run(() => ProcessarFila(), cts.Token);
     }
 
-    public void Processar()
+    private void ProcessarFila()
     {
-        while (true)
+        while (!cts.Token.IsCancellationRequested)
         {
-            var limiteCoordenador = DateTime.Now.AddSeconds(60);
-            while (DateTime.Now < limiteCoordenador) //Enquanto o coordenador está vivo
+            No? noParaProcessar = null;
+
+            lock (_lock)
             {
-                var limiteCriaProcesso = DateTime.Now.AddSeconds(40);
-                while (DateTime.Now < limiteCriaProcesso) //Enquanto um processo novo não é criado
+                if (!recursoEmUso && FilaNos.Count > 0)
                 {
-                    for (int i = 0; i < QuantidadeNos; i++)
-                    {
-                        while (DateTime.Now < ListaNos[i].SegundosProcessamento) //Enquanto o tempo de requisição do nó não for atingido
-                        {
-                            Thread.Sleep(50);
-                        }
-                        CriarRequisicao(ListaNos[i]); //Chamada da criação de requisição
-                        ProcessarRequisicao(ListaNos[i]); //Chamada do processamento de requisição
-                    }
+                    noParaProcessar = FilaNos.Dequeue();
+                    recursoEmUso = true;
                 }
-                CriarNovoNo();
-                //Coordenador atual morre e a fila de requisições é perdida
-                CoordenadorMorre();
-                LimpaFilaNos();
-                //Um novo coordenador é definido aleatoriamente
-                DefinirNovoCoordenador();
             }
-        }
-    }
 
-    private void CriarRequisicao(No NoRequisitor)
-    {
-        var Coordenador = ListaNos.First(x => x.Coordenador); //A variável recebe o atual coordenador da fila. 
-
-        if (FilaNos.Count == 0) //Se a fila estiver vazia, a requisição é atendida imediatamente.
-        {
-            Console.WriteLine("OK!");
-            ProcessarRequisicao(NoRequisitor);
-        }
-        else //Se a fila tiver outros nós pendentes
-        {
-            FilaNos.Enqueue(NoRequisitor);
-        }
-    }
-
-    private void ProcessarRequisicao(No noRequisidor)
-    {
-        if (FilaNos.Count == 0) //Se não há nada para processar, a requisição é atendida diretamente
-        {
-            while (DateTime.Now < noRequisidor.SegundosProcessamento) // Equanto o processo estiver consumindo o recurso
+            if (noParaProcessar != null)
             {
-                Thread.Sleep(50);
+                Console.WriteLine($"Processando requisição do {noParaProcessar.NomeProcesso}");
+                while (DateTime.Now < noParaProcessar.SegundosProcessamento)
+                {
+                    Thread.Sleep(50); // Simula execução na seção crítica
+                }
+                Console.WriteLine($"Requisição do {noParaProcessar.NomeProcesso} concluída");
+
+                lock (_lock)
+                {
+                    recursoEmUso = false;
+                }
             }
-        }
-        else // Existe um processo na fila, o qual deve ser removido e processado
-        {
-            No processoNaFila = FilaNos.Dequeue();
-            while (DateTime.Now < processoNaFila.SegundosProcessamento) // Equanto o processo estiver consumindo o recurso
+            else
             {
-                Thread.Sleep(50);
+                Thread.Sleep(50); // Aguarda antes de tentar processar próximo
             }
         }
     }
+
+    // Método para criação de requisição: sempre enfileira a requisição
+    private void CriarRequisicao(No noRequisitor)
+    {
+        lock (_lock)
+        {
+            Console.WriteLine($"Recebida requisição de {noRequisitor.NomeProcesso}");
+            FilaNos.Enqueue(noRequisitor);
+        }
+    }
+
+    // Outros métodos do código original permanecem iguais...
+
     private void CriarNovoNo()
     {
         ListaNos.Add(new No
@@ -105,20 +102,26 @@ public class Algoritmo
 
     private void LimpaFilaNos()
     {
-        FilaNos.Clear();
+        lock (_lock)
+        {
+            FilaNos.Clear();
+        }
     }
 
     private void DefinirNovoCoordenador()
     {
-        var novoCoordenador = ListaNos.OrderBy(x => Guid.NewGuid()).First(); //O novo coordenador é escolhido aleatoriamente
+        var novoCoordenador = ListaNos.OrderBy(x => Guid.NewGuid()).First();
         novoCoordenador.Coordenador = true;
     }
 
     private void CoordenadorMorre()
     {
         var noCoordenador = ListaNos.Where(x => x.Coordenador).FirstOrDefault();
-        ListaNos.Remove(noCoordenador);
-        QuantidadeNos--;
+        if (noCoordenador != null)
+        {
+            ListaNos.Remove(noCoordenador);
+            QuantidadeNos--;
+        }
     }
 
     private class No
@@ -126,7 +129,7 @@ public class Algoritmo
         public Guid Id { get; set; }
         public string NomeProcesso { get; set; } = string.Empty;
         public bool Coordenador { get; set; }
-        public DateTime SegundosProcessamento {  get; set; }
+        public DateTime SegundosProcessamento { get; set; }
 
         public No()
         {
@@ -136,8 +139,8 @@ public class Algoritmo
         public void NovoTempoProcessamento()
         {
             var novoProcessamento = DateTime.Now.AddSeconds(new Random().Next(5, 15));
-
             SegundosProcessamento = novoProcessamento;
         }
     }
 }
+
