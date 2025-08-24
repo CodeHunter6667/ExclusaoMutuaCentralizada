@@ -40,7 +40,7 @@ public class Algoritmo
                 {
                     for (int i = 0; i < QuantidadeNos; i++)
                     {
-                        while (DateTime.Now < ListaNos[i].SegundosRequisicao) //Enquanto o tempo de requisição do nó não for atingido
+                        while (DateTime.Now < ListaNos[i].SegundosProcessamento) //Enquanto o tempo de requisição do nó não for atingido
                         {
                             Thread.Sleep(50);
                         }
@@ -49,11 +49,12 @@ public class Algoritmo
                     }
                 }
                 CriarNovoNo();
-            //Coordenador atual morre e a fila de requisições é perdida
-            CoordenadorMorre();
-            LimpaFilaNos();
-            //Um novo coordenador é definido aleatoriamente
-            DefinirNovoCoordenador();
+                //Coordenador atual morre e a fila de requisições é perdida
+                CoordenadorMorre();
+                LimpaFilaNos();
+                //Um novo coordenador é definido aleatoriamente
+                DefinirNovoCoordenador();
+            }
         }
     }
 
@@ -90,42 +91,6 @@ public class Algoritmo
             }
         }
     }
-
-    private void CriarRequisicao(No NoRequisitor)
-    {
-        var Coordenador = ListaNos.First(x => x.Coordenador); //A variável recebe o atual coordenador da fila. 
-
-        if(PilhaNos.Count == 0) //Se a fila estiver vazia, a requisição é atendida imediatamente.
-        {
-            Console.WriteLine("OK!");
-            ProcessarRequisicao(NoRequisitor);
-        }
-        else //Se a fila tiver outros nós pendentes
-        {
-            PilhaNos.Push(NoRequisitor); //O nó requisitor é inserido na fila
-
-        }
-    }
-
-    private void ProcessarRequisicao(No noRequisidor)
-    {
-        if(PilhaNos.Count == 0) //Se não há nada para processar, a requisição é atendida diretamente
-        {
-            while(DateTime.Now.TimeOfDay < noRequisidor.SegundosProcessamento.TimeOfDay) // Equanto o processo estiver consumindo o recurso
-            {
-                //Passou o tempo
-            }
-        }
-        else // Existe um processo na fila, o qual deve ser removido e processado
-        {
-            No processoNaFila = PilhaNos.Pop();
-            while (DateTime.Now.TimeOfDay < noRequisidor.SegundosProcessamento.TimeOfDay) // Equanto o processo estiver consumindo o recurso
-            {
-                //Passou o tempo          
-            }
-        }
-    }
-
     private void CriarNovoNo()
     {
         ListaNos.Add(new No
