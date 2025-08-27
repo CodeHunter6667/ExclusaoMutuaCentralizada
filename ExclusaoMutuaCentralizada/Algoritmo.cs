@@ -184,41 +184,6 @@ public class Algoritmo
         }
     }
 
-    private void CriarRequisicao(No NoRequisitor)
-    {
-        var Coordenador = ListaNos.First(x => x.Coordenador); //A variável recebe o atual coordenador da fila. 
-
-        if(PilhaNos.Count == 0) //Se a fila estiver vazia, a requisição é atendida imediatamente.
-        {
-            Console.WriteLine("OK!");
-            ProcessarRequisicao(NoRequisitor);
-        }
-        else //Se a fila tiver outros nós pendentes
-        {
-            PilhaNos.Push(NoRequisitor); //O nó requisitor é inserido na fila
-
-        }
-    }
-
-    private void ProcessarRequisicao(No noRequisidor)
-    {
-        if(PilhaNos.Count == 0) //Se não há nada para processar, a requisição é atendida diretamente
-        {
-            while(DateTime.Now.TimeOfDay < noRequisidor.SegundosProcessamento.TimeOfDay) // Equanto o processo estiver consumindo o recurso
-            {
-                //Passou o tempo
-            }
-        }
-        else // Existe um processo na fila, o qual deve ser removido e processado
-        {
-            No processoNaFila = PilhaNos.Pop();
-            while (DateTime.Now.TimeOfDay < noRequisidor.SegundosProcessamento.TimeOfDay) // Equanto o processo estiver consumindo o recurso
-            {
-                //Passou o tempo          
-            }
-        }
-    }
-
     // Escolhe novo coordenador aleatoriamente
     private void DefinirNovoCoordenadorAleatorio()
     {
